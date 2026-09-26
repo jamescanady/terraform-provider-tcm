@@ -15,6 +15,7 @@ coverage.txt
 
 # Go build cache
 vendor/
+.claude/
 
 # GoReleaser output
 dist/
