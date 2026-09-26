@@ -4,6 +4,27 @@ Internal Terraform provider for the symplr **Tenant Configuration Management (TC
 
 ---
 
+## Releasing
+
+Releases are created by pushing a version tag. CI will build, package, and publish a GitHub Release automatically via GoReleaser.
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+Follow [Semantic Versioning](https://semver.org): `MAJOR.MINOR.PATCH`.
+
+| Change type | Version bump | Example |
+|---|---|---|
+| Breaking change | Major | `v1.0.0` → `v2.0.0` |
+| New resource or argument | Minor | `v1.0.0` → `v1.1.0` |
+| Bug fix | Patch | `v1.0.0` → `v1.0.1` |
+
+The tag must start with `v` (lowercase). The release workflow triggers only on tag pushes — merging to `main` runs CI only.
+
+---
+
 ## Building
 
 Requires Go 1.26+.
