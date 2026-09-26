@@ -2,8 +2,6 @@ name: Main Branch CI
 
 on:
   push:
-    paths-ignore:
-      - .github/**
     branches:
       - main
 
@@ -25,39 +23,3 @@ jobs:
 
       - name: Test
         run: go test ./...
-
-  release:
-    name: Release
-    needs: ci
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: ./.github/actions/next-version
-        id: gitversion
-
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ steps.gitversion.outputs.sem-ver }}"
-          git push origin "v${{ steps.gitversion.outputs.sem-ver }}"
-
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          distribution: goreleaser
-          version: latest
-          args: release --clean --config .github/.goreleaser.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
