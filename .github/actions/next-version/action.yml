@@ -13,4 +13,5 @@ runs:
     - uses: gittools/actions/gitversion/execute@v4.7.0
       id: gitversion
       with:
-        mode: ContinuousDelivery
+        overrideConfig: |
+          workflow=GitHubFlow/v1
