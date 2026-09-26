@@ -24,8 +24,8 @@ jobs:
       - name: Test
         run: go test ./...
 
-  draft-release:
-    name: Draft Release
+  release:
+    name: Release
     needs: ci
     runs-on: ubuntu-latest
     permissions:
@@ -41,25 +41,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Run GoReleaser (snapshot)
+      - uses: ./.github/actions/next-version
+        id: gitversion
+
+      - name: Create and push tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v${{ steps.gitversion.outputs.sem-ver }}"
+          git push origin "v${{ steps.gitversion.outputs.sem-ver }}"
+
+      - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: release --snapshot --clean --config .github/.goreleaser.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Draft Release
-        uses: softprops/action-gh-release@v2
-        with:
-          draft: true
-          name: "Draft — build ${{ github.run_number }} (${{ github.sha }})"
-          tag_name: "dev-${{ github.run_number }}"
-          generate_release_notes: true
-          files: |
-            dist/*.zip
-            dist/*_SHA256SUMS
-            dist/*_SHA256SUMS.sig
+          args: release --clean --config .github/.goreleaser.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
