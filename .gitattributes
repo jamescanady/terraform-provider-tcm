@@ -1,0 +1,44 @@
+# Default to LF for all text files
+* text=auto eol=lf
+
+# Go source
+*.go text eol=lf diff=golang
+
+# Modules
+go.mod text eol=lf
+go.sum text eol=lf
+
+# Shell scripts
+*.sh text eol=lf
+
+# Windows scripts — keep CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Terraform
+*.tf text eol=lf
+*.tfvars text eol=lf
+
+# YAML / JSON / TOML
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+
+# Markdown / docs
+*.md text eol=lf
+*.txt text eol=lf
+
+# Binaries — never diff or convert
+*.zip binary
+*.tar.gz binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

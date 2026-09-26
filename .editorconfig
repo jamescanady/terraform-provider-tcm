@@ -1,0 +1,44 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go — gofmt mandates tabs
+[*.go]
+indent_style = tab
+indent_size = 4
+
+# Go modules
+[go.{mod,sum}]
+indent_style = tab
+indent_size = 4
+
+# Terraform
+[*.{tf,tfvars}]
+indent_style = space
+indent_size = 2
+
+# YAML / JSON / TOML
+[*.{yml,yaml,json,toml}]
+indent_style = space
+indent_size = 2
+
+# Markdown — preserve trailing spaces (line breaks)
+[*.md]
+trim_trailing_whitespace = false
+indent_style = space
+indent_size = 2
+
+# Shell
+[*.sh]
+indent_style = space
+indent_size = 2
+
+# Windows scripts
+[*.{bat,cmd,ps1}]
+end_of_line = crlf
+indent_style = space
+indent_size = 4
