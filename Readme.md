@@ -6,7 +6,7 @@ Internal Terraform provider for the symplr **Tenant Configuration Management (TC
 
 ## Building
 
-Requires Go 1.21+.
+Requires Go 1.26+.
 
 ```bash
 cd provider-tcm
