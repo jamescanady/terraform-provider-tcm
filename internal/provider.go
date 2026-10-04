@@ -77,9 +77,20 @@ func (p *TcmProvider) Configure(ctx context.Context, req provider.ConfigureReque
 func (p *TcmProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewProductResource,
+		NewTenantResource,
+		NewTenantProductResource,
+		NewTenantProductEnvironmentResource,
+		NewSystemInfoResource,
+		NewNamespaceResource,
 	}
 }
 
 func (p *TcmProvider) DataSources(_ context.Context) []func() datasource.DataSource {
-	return []func() datasource.DataSource{}
+	return []func() datasource.DataSource{
+		NewTenantDataSource,
+		NewTenantProductDataSource,
+		NewTenantProductEnvironmentDataSource,
+		NewSystemInfoDataSource,
+		NewNamespaceDataSource,
+	}
 }

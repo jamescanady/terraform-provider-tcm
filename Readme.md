@@ -88,65 +88,27 @@ Available base URLs by environment:
 
 ---
 
-## Resources
+## Resources and Data Sources
 
-### `tcm_product`
+Full reference documentation is in the [`docs/`](docs/) folder.
 
-Manages a Product entry in TCM.
+**Resources**
 
-> **Note:** TCM has no hard-delete endpoint for products. Running `terraform destroy` will **soft-delete** the product by setting `isDisabled = true` via `PUT /v1/Product/{id}`. The record remains in TCM.
+| Resource | Description |
+|----------|-------------|
+| [`tcm_product`](docs/resources/product.md) | Manages a Product. |
+| [`tcm_namespace`](docs/resources/namespace.md) | Manages a Namespace. |
+| [`tcm_tenant`](docs/resources/tenant.md) | Manages a Tenant. |
+| [`tcm_tenant_product`](docs/resources/tenant_product.md) | Manages a Tenant ↔ Product mapping. |
+| [`tcm_tenant_product_environment`](docs/resources/tenant_product_environment.md) | Manages a Tenant ↔ Product Environment mapping. |
+| [`tcm_system_info`](docs/resources/system_info.md) | Manages a SystemInfo connection entry. |
 
-#### Example
+**Data Sources**
 
-```hcl
-resource "tcm_product" "event_engine_audit" {
-  name        = "EventEngineAudit"
-  description = "Event Engine Audit product"
-}
-```
-
-#### Arguments
-
-| Argument      | Required | Type   | Description |
-|---------------|----------|--------|-------------|
-| `name`        | yes      | string | Product name. |
-| `description` | yes      | string | Product description. Maximum 110 characters. |
-| `is_disabled` | no       | bool   | Whether the product is disabled. Defaults to `false`. |
-
-#### Attributes (read-only)
-
-| Attribute | Type   | Description |
-|-----------|--------|-------------|
-| `id`      | string | UUID assigned by TCM on creation. |
-
----
-
-## Importing Existing Products
-
-If a product already exists in TCM and you want to bring it under Terraform management, import it using its TCM UUID:
-
-```bash
-terraform import tcm_product.<resource_name> <uuid>
-```
-
-**Example:**
-```bash
-terraform import tcm_product.event_engine_audit 3f2504e0-4f89-11d3-9a0c-0305e82c3301
-```
-
-Terraform will populate the rest of the state from TCM via a `Read` call after the import.
-
-### Finding the UUID
-
-If you only know the product name, use the TCM `find` endpoint to look up the UUID:
-
-```bash
-curl -s \
-  -H "Authorization: Bearer $TCM_TOKEN" \
-  "https://stable-platform.symplr.com/ce-platform-tenant-configuration-service/v1/Product/find/EventEngineAudit" \
-  | jq '.[0].id'
-```
-
-Use the returned UUID in the `terraform import` command above.
-
-> **Important:** If you skip the import and run `terraform apply` against a product that already exists, TCM will return a `409 Conflict` and the apply will fail. Always import first when the product is pre-existing.
+| Data Source | Description |
+|-------------|-------------|
+| [`tcm_namespace`](docs/data-sources/namespace.md) | Reads a Namespace by ID. |
+| [`tcm_tenant`](docs/data-sources/tenant.md) | Reads a Tenant by ID. |
+| [`tcm_tenant_product`](docs/data-sources/tenant_product.md) | Reads a TenantProduct mapping by ID. |
+| [`tcm_tenant_product_environment`](docs/data-sources/tenant_product_environment.md) | Reads a TenantProductEnvironment by ID. |
+| [`tcm_system_info`](docs/data-sources/system_info.md) | Reads a SystemInfo entry by ID. |
