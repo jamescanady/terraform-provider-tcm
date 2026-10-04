@@ -1,0 +1,152 @@
+name: Deploy 'Infrastructure' Config
+run-name: "infrastructure / ${{ inputs.environment }} — ${{ inputs.plan_only && 'plan only' || 'plan + apply' }} (${{ github.ref_name }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - stable
+          - staging
+          - prod
+      plan_only:
+        description: 'Run plan only (skip apply)'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    env:
+      IS_PROD_ACCOUNT: ${{ inputs.environment == 'prod' || inputs.environment == 'staging' }}
+    outputs:
+      has-changes: ${{ steps.plan.outputs.has-changes }}
+      plan-file: ${{ steps.plan.outputs.plan-file }}
+    permissions:
+      id-token: write
+      contents: read
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Print the selected branch or tag
+        run: |
+          echo "The clean ref name is: ${{ github.ref_name }}"
+          echo "The fully qualified ref is: ${{ github.ref }}"
+      
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ fromJSON(env.IS_PROD_ACCOUNT) && vars.ROLE_TO_ASSUME_PROD || vars.ROLE_TO_ASSUME_NONPROD }}
+          aws-region: us-east-2
+
+      - name: Get OAuth Provider token
+        id: oauth
+        uses: ./.github/actions/pf-token
+        with:
+          secret_name: ${{ vars.PINGFEDERATE_SECRET_NAME }}
+          token_url: ${{ vars.pingfederate_token_url }}
+          scope: ${{ vars.TCM_REQUIRED_SCOPE }}
+
+      - name: Set TCM token
+        shell: bash
+        run: echo "TF_VAR_tcm_token=${{ steps.oauth.outputs.access-token }}" >> "$GITHUB_ENV"
+
+      - name: Build the TCM Provider
+        uses: ./.github/actions/tf-setup
+        with:
+          version: ${{ vars.TCM_PROVIDER_VERSION }}
+          repo: ${{ vars.TCM_PROVIDER_REPO }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.5"
+
+      - name: Terraform Init
+        uses: ./.github/actions/tf-init
+        with:
+          config: infrastructure
+          environment: ${{ inputs.environment }}
+
+      - name: Terraform Plan
+        id: plan
+        uses: ./.github/actions/tf-plan
+        with:
+          config: infrastructure
+          environment-file: ${{ inputs.environment }}
+
+      - name: Upload plan
+        uses: actions/upload-artifact@v7
+        if: steps.plan.outputs.has-changes == 'true'
+        with:
+          name: tfplan-infrastructure
+          path: ${{ steps.plan.outputs.plan-file }}
+          retention-days: 1
+
+  apply:
+    needs: plan
+    if: needs.plan.outputs.has-changes == 'true' && !inputs.plan_only
+    runs-on: ubuntu-latest
+    env:
+      IS_PROD_ACCOUNT: ${{ inputs.environment == 'prod' || inputs.environment == 'staging' }}
+    environment: ${{ (inputs.environment == 'prod' || inputs.environment == 'staging') && 'terraform-apply-prod' || 'terraform-apply-nonprod' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ fromJSON(env.IS_PROD_ACCOUNT) && vars.ROLE_TO_ASSUME_PROD || vars.ROLE_TO_ASSUME_NONPROD }}
+          aws-region: us-east-2
+
+      - name: Build the TCM Provider
+        uses: ./.github/actions/tf-build-provider
+
+      - name: Get OAuth Provider token
+        id: oauth
+        uses: ./.github/actions/pf-token
+        with:
+          secret_name: ${{ vars.PINGFEDERATE_SECRET_NAME }}
+          token_url: ${{ vars.pingfederate_token_url }}
+          scope: ${{ vars.TCM_REQUIRED_SCOPE }}
+
+      - name: Set TCM token
+        shell: bash
+        run: echo "TF_VAR_tcm_token=${{ steps.oauth.outputs.access-token }}" >> "$GITHUB_ENV"
+
+      - name: Download plan
+        uses: actions/download-artifact@v8
+        with:
+          name: tfplan-infrastructure
+          path: tcm
+
+      - name: Extract plan filename
+        id: plan-filename
+        run: echo "filename=$(basename '${{ needs.plan.outputs.plan-file }}')" >> $GITHUB_OUTPUT
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.5"
+
+      - name: Terraform Init
+        uses: ./.github/actions/tf-init
+        with:
+          config: tcm
+          environment: ${{ inputs.environment }}
+
+      - name: Terraform Apply
+        uses: ./.github/actions/tf-apply
+        with:
+          config: tcm
+          plan-file: ${{ steps.plan-filename.outputs.filename }}

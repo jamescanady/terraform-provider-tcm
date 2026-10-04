@@ -1,0 +1,56 @@
+name: Setup the TCM Terraform provider
+description: Downloads and configures the TCM Terraform provider from GitHub Releases.
+inputs:
+  version:
+    description: Release tag to install (e.g. v1.0.0). Defaults to latest.
+    required: false
+    default: latest
+  repo:
+    description: GitHub repository to download the provider from (e.g. owner/repo).
+    required: false
+    default: jamescanady/terraform-provider-tcm
+runs:
+  using: "composite"
+  steps:
+    - name: Download TCM Provider
+      id: download
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        arch=$(uname -m)
+        if [[ "$arch" == "x86_64" ]]; then arch="amd64"; elif [[ "$arch" == "aarch64" ]]; then arch="arm64"; fi
+        os=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+        install_dir="$HOME/.terraform.d/plugins/symplr/tcm"
+        mkdir -p "$install_dir"
+
+        pattern="*${os}_${arch}*"
+        version="${{ inputs.version }}"
+
+        if [[ "$version" == "latest" ]]; then
+          gh release download \
+            --repo "${{ inputs.repo }}" \
+            --pattern "$pattern" \
+            --output "$install_dir/terraform-provider-tcm"
+        else
+          gh release download "$version" \
+            --repo "${{ inputs.repo }}" \
+            --pattern "$pattern" \
+            --output "$install_dir/terraform-provider-tcm"
+        fi
+
+        chmod +x "$install_dir/terraform-provider-tcm"
+        echo "install_dir=$install_dir" >> "$GITHUB_OUTPUT"
+
+    - name: Create terraformrc
+      shell: bash
+      run: |
+        cat > ~/.terraformrc <<EOF
+        provider_installation {
+          dev_overrides {
+            "symplr/tcm" = "${{ steps.download.outputs.install_dir }}"
+          }
+          direct {}
+        }
+        EOF

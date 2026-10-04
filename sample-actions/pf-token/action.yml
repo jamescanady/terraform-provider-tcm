@@ -1,0 +1,59 @@
+name: Get PingFederate OAuth Token
+description: Fetches a client credentials Bearer token from an OAuth provider
+inputs:
+  secret_name:
+    description: AWS Secrets Manager secret name containing client_id and client_secret
+    required: true
+  token_url:
+    description: The OAuth Provider token url
+    required: true
+  scope:
+    description: The required request scope
+    required: true
+
+
+outputs:
+  access-token:
+    description: Bearer token returned by the OAuth provider
+    value: ${{ steps.fetch-token.outputs.access_token }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get OAuth Provider Token
+      id: fetch-token
+      shell: bash
+      env:
+        SECRET_NAME: ${{ inputs.secret_name }}
+        TOKEN_URL:   ${{ inputs.token_url }}
+        SCOPE:       ${{ inputs.scope }}
+      run: |
+        secret=$(aws secretsmanager get-secret-value \
+          --secret-id "$SECRET_NAME" \
+          --query SecretString \
+          --output text)
+
+        client_id=$(echo "$secret" | jq -r '.pingfederate_client_id')
+        client_secret=$(echo "$secret" | jq -r '.pingfederate_client_secret')
+
+        echo "::add-mask::$client_id"
+        echo "::add-mask::$client_secret"
+
+        response=$(curl --silent --fail-with-body \
+          --request POST "$TOKEN_URL" \
+          --header "Content-Type: application/x-www-form-urlencoded" \
+          --header "Accept: application/json" \
+          --data-urlencode "grant_type=client_credentials" \
+          --data-urlencode "client_id=$client_id" \
+          --data-urlencode "client_secret=$client_secret" \
+          --data-urlencode "scope=$SCOPE")
+
+        access_token=$(echo "$response" | jq -r '.access_token // empty')
+
+        if [[ -z "$access_token" ]]; then
+          echo "Error: access_token not found in response"
+          echo "$response" | jq . >&2
+          exit 1
+        fi
+
+        echo "access_token=$access_token" >> "$GITHUB_OUTPUT"
