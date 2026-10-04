@@ -97,6 +97,7 @@ Full reference documentation is in the [`docs/`](docs/) folder.
 | Resource | Description |
 |----------|-------------|
 | [`tcm_product`](docs/resources/product.md) | Manages a Product. |
+| [`tcm_product_environment`](docs/resources/product_environment.md) | Manages a Product Environment. |
 | [`tcm_namespace`](docs/resources/namespace.md) | Manages a Namespace. |
 | [`tcm_tenant`](docs/resources/tenant.md) | Manages a Tenant. |
 | [`tcm_tenant_product`](docs/resources/tenant_product.md) | Manages a Tenant ↔ Product mapping. |
@@ -107,6 +108,7 @@ Full reference documentation is in the [`docs/`](docs/) folder.
 
 | Data Source | Description |
 |-------------|-------------|
+| [`tcm_product_environment`](docs/data-sources/product_environment.md) | Reads a Product Environment by ID. |
 | [`tcm_namespace`](docs/data-sources/namespace.md) | Reads a Namespace by ID. |
 | [`tcm_tenant`](docs/data-sources/tenant.md) | Reads a Tenant by ID. |
 | [`tcm_tenant_product`](docs/data-sources/tenant_product.md) | Reads a TenantProduct mapping by ID. |
