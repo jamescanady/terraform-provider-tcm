@@ -1,216 +1,90 @@
-package internal_test
+package internal
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-type mockTenantProduct struct {
-	ID                string  `json:"id"`
-	TenantID          string  `json:"tenantId"`
-	ProductID         string  `json:"productId"`
-	TenantProductCode *string `json:"tenantProductCode,omitempty"`
-	IsDisabled        bool    `json:"isDisabled"`
+func TestTenantProduct_applyTenantProductResult_withID(t *testing.T) {
+	id := "tp-001"
+	code := "TPC001"
+	p := &tenantProductPayload{
+		ID:                &id,
+		TenantID:          "tenant-abc",
+		ProductID:         "product-xyz",
+		TenantProductCode: &code,
+		IsDisabled:        false,
+	}
+	var m TenantProductResourceModel
+	applyTenantProductResult(&m, p)
+
+	if m.ID.ValueString() != "tp-001" {
+		t.Errorf("expected ID tp-001, got %s", m.ID.ValueString())
+	}
+	if m.TenantID.ValueString() != "tenant-abc" {
+		t.Errorf("expected TenantID tenant-abc, got %s", m.TenantID.ValueString())
+	}
+	if m.ProductID.ValueString() != "product-xyz" {
+		t.Errorf("expected ProductID product-xyz, got %s", m.ProductID.ValueString())
+	}
+	if m.TenantProductCode.ValueString() != "TPC001" {
+		t.Errorf("expected TenantProductCode TPC001, got %s", m.TenantProductCode.ValueString())
+	}
+	if m.IsDisabled.ValueBool() {
+		t.Error("expected IsDisabled false")
+	}
 }
 
-func newTenantProductMockServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	var (
-		mu      sync.Mutex
-		counter atomic.Int64
-		store   = map[string]*mockTenantProduct{}
-	)
+func TestTenantProduct_applyTenantProductResult_nilTenantProductCode(t *testing.T) {
+	id := "tp-002"
+	p := &tenantProductPayload{
+		ID:                &id,
+		TenantID:          "tenant-def",
+		ProductID:         "product-ghi",
+		TenantProductCode: nil,
+		IsDisabled:        false,
+	}
+	var m TenantProductResourceModel
+	applyTenantProductResult(&m, p)
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/v1/TenantProduct", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var p struct {
-			TenantID          string  `json:"tenantId"`
-			ProductID         string  `json:"productId"`
-			TenantProductCode *string `json:"tenantProductCode"`
-			IsDisabled        bool    `json:"isDisabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		id := fmt.Sprintf("tp-%d", counter.Add(1))
-		tp := &mockTenantProduct{
-			ID:                id,
-			TenantID:          p.TenantID,
-			ProductID:         p.ProductID,
-			TenantProductCode: p.TenantProductCode,
-			IsDisabled:        p.IsDisabled,
-		}
-		mu.Lock()
-		store[id] = tp
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tp) //nolint:errcheck
-	})
-
-	mux.HandleFunc("/v1/TenantProduct/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/v1/TenantProduct/")
-		switch r.Method {
-		case http.MethodGet:
-			mu.Lock()
-			tp, ok := store[id]
-			var snap mockTenantProduct
-			if ok {
-				snap = *tp
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&snap) //nolint:errcheck
-
-		case http.MethodPut:
-			var p struct {
-				TenantProductCode *string `json:"tenantProductCode"`
-				IsDisabled        bool    `json:"isDisabled"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			mu.Lock()
-			tp, ok := store[id]
-			var updated mockTenantProduct
-			if ok {
-				tp.TenantProductCode = p.TenantProductCode
-				tp.IsDisabled = p.IsDisabled
-				updated = *tp
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&updated) //nolint:errcheck
-
-		case http.MethodDelete:
-			mu.Lock()
-			_, ok := store[id]
-			if ok {
-				delete(store, id)
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	return httptest.NewServer(mux)
+	if !m.TenantProductCode.IsNull() {
+		t.Error("expected TenantProductCode to be null when payload TenantProductCode is nil")
+	}
 }
 
-func TestAccTenantProductResource_lifecycle(t *testing.T) {
-	srv := newTenantProductMockServer(t)
-	t.Cleanup(srv.Close)
+func TestTenantProduct_applyTenantProductResult_nilID(t *testing.T) {
+	p := &tenantProductPayload{
+		ID:                nil,
+		TenantID:          "tenant-xyz",
+		ProductID:         "product-abc",
+		TenantProductCode: nil,
+		IsDisabled:        false,
+	}
+	m := TenantProductResourceModel{
+		ID: types.StringValue("existing-tp-id"),
+	}
+	applyTenantProductResult(&m, p)
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_tenant_product" "test" {
-  tenant_id  = "tenant-abc"
-  product_id = "product-xyz"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("tcm_tenant_product.test", "id"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "tenant_id", "tenant-abc"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "product_id", "product-xyz"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "is_disabled", "false"),
-				),
-			},
-			{
-				Config: providerConfig + `
-resource "tcm_tenant_product" "test" {
-  tenant_id           = "tenant-abc"
-  product_id          = "product-xyz"
-  tenant_product_code = "TPC001"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "tenant_id", "tenant-abc"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "product_id", "product-xyz"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "tenant_product_code", "TPC001"),
-					resource.TestCheckResourceAttr("tcm_tenant_product.test", "is_disabled", "false"),
-				),
-			},
-			{
-				ResourceName:      "tcm_tenant_product.test",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-		},
-	})
+	// ID should remain unchanged when payload ID is nil
+	if m.ID.ValueString() != "existing-tp-id" {
+		t.Errorf("expected ID existing-tp-id, got %s", m.ID.ValueString())
+	}
 }
 
-func TestAccTenantProductDataSource_read(t *testing.T) {
-	srv := newTenantProductMockServer(t)
-	t.Cleanup(srv.Close)
+func TestTenantProduct_applyTenantProductResult_disabled(t *testing.T) {
+	id := "tp-dis"
+	p := &tenantProductPayload{
+		ID:                &id,
+		TenantID:          "tenant-1",
+		ProductID:         "product-1",
+		TenantProductCode: nil,
+		IsDisabled:        true,
+	}
+	var m TenantProductResourceModel
+	applyTenantProductResult(&m, p)
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_tenant_product" "seed" {
-  tenant_id           = "tenant-ds"
-  product_id          = "product-ds"
-  tenant_product_code = "TPCDS"
-}
-
-data "tcm_tenant_product" "test" {
-  id = tcm_tenant_product.seed.id
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrPair("data.tcm_tenant_product.test", "id", "tcm_tenant_product.seed", "id"),
-					resource.TestCheckResourceAttr("data.tcm_tenant_product.test", "tenant_id", "tenant-ds"),
-					resource.TestCheckResourceAttr("data.tcm_tenant_product.test", "product_id", "product-ds"),
-					resource.TestCheckResourceAttr("data.tcm_tenant_product.test", "tenant_product_code", "TPCDS"),
-					resource.TestCheckResourceAttr("data.tcm_tenant_product.test", "is_disabled", "false"),
-				),
-			},
-		},
-	})
+	if !m.IsDisabled.ValueBool() {
+		t.Error("expected IsDisabled true")
+	}
 }

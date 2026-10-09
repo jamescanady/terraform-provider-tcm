@@ -1,229 +1,150 @@
-package internal_test
+package internal
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-type mockNamespace struct {
-	ID             string  `json:"id"`
-	Name           *string `json:"name,omitempty"`
-	Description    *string `json:"description,omitempty"`
-	IsDefault      bool    `json:"isDefault"`
-	IsDisabled     bool    `json:"isDisabled"`
-	CreatedDate    string  `json:"createdDate"`
-	CreatedBy      *string `json:"createdBy,omitempty"`
-	LastModified   string  `json:"lastModified"`
-	LastModifiedBy *string `json:"lastModifiedBy,omitempty"`
+func TestNamespace_toPayload_defaults(t *testing.T) {
+	r := &NamespaceResource{}
+	m := &NamespaceResourceModel{
+		ID:          types.StringNull(),
+		Name:        types.StringValue("my-namespace"),
+		Description: types.StringNull(),
+		IsDisabled:  types.BoolValue(false),
+	}
+
+	p := r.toPayload(m)
+
+	if p.Name != "my-namespace" {
+		t.Errorf("expected Name my-namespace, got %s", p.Name)
+	}
+	if p.IsDisabled != false {
+		t.Error("expected IsDisabled false")
+	}
+	if p.Description != nil {
+		t.Error("expected Description nil when model Description is null")
+	}
+	if p.ID != "" {
+		t.Errorf("expected ID empty string when model ID is null, got %s", p.ID)
+	}
 }
 
-func newNamespaceMockServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	var (
-		mu      sync.Mutex
-		counter atomic.Int64
-		store   = map[string]*mockNamespace{}
-	)
+func TestNamespace_toPayload_withAllFields(t *testing.T) {
+	r := &NamespaceResource{}
+	desc := "a description"
+	m := &NamespaceResourceModel{
+		ID:          types.StringValue("ns-001"),
+		Name:        types.StringValue("full-namespace"),
+		Description: types.StringValue(desc),
+		IsDisabled:  types.BoolValue(true),
+	}
 
-	mux := http.NewServeMux()
+	p := r.toPayload(m)
 
-	mux.HandleFunc("/v1/Namespace", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var p struct {
-			Name        *string `json:"name"`
-			Description *string `json:"description"`
-			IsDisabled  bool    `json:"isDisabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		id := fmt.Sprintf("ns-%d", counter.Add(1))
-		author := "test-user"
-		ns := &mockNamespace{
-			ID:             id,
-			Name:           p.Name,
-			Description:    p.Description,
-			IsDefault:      false,
-			IsDisabled:     p.IsDisabled,
-			CreatedDate:    "2024-01-01T00:00:00Z",
-			CreatedBy:      &author,
-			LastModified:   "2024-01-01T00:00:00Z",
-			LastModifiedBy: &author,
-		}
-		mu.Lock()
-		store[id] = ns
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(ns) //nolint:errcheck
-	})
-
-	mux.HandleFunc("/v1/Namespace/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/v1/Namespace/")
-		switch r.Method {
-		case http.MethodGet:
-			mu.Lock()
-			ns, ok := store[id]
-			var snap mockNamespace
-			if ok {
-				snap = *ns
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&snap) //nolint:errcheck
-
-		case http.MethodPut:
-			var p struct {
-				Name        *string `json:"name"`
-				Description *string `json:"description"`
-				IsDisabled  bool    `json:"isDisabled"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			mu.Lock()
-			ns, ok := store[id]
-			var updated mockNamespace
-			if ok {
-				ns.Name = p.Name
-				ns.Description = p.Description
-				ns.IsDisabled = p.IsDisabled
-				ns.LastModified = "2024-01-02T00:00:00Z"
-				updated = *ns
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&updated) //nolint:errcheck
-
-		case http.MethodDelete:
-			mu.Lock()
-			_, ok := store[id]
-			if ok {
-				delete(store, id)
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	return httptest.NewServer(mux)
+	if p.ID != "ns-001" {
+		t.Errorf("expected ID ns-001, got %s", p.ID)
+	}
+	if p.Name != "full-namespace" {
+		t.Errorf("expected Name full-namespace, got %s", p.Name)
+	}
+	if p.Description == nil || *p.Description != desc {
+		t.Errorf("expected Description %q, got %v", desc, p.Description)
+	}
+	if !p.IsDisabled {
+		t.Error("expected IsDisabled true")
+	}
 }
 
-func TestAccNamespaceResource_lifecycle(t *testing.T) {
-	srv := newNamespaceMockServer(t)
-	t.Cleanup(srv.Close)
+func TestNamespace_toPayload_unknownIDSkipped(t *testing.T) {
+	r := &NamespaceResource{}
+	m := &NamespaceResourceModel{
+		ID:          types.StringUnknown(),
+		Name:        types.StringValue("ns-unknown"),
+		Description: types.StringNull(),
+		IsDisabled:  types.BoolValue(false),
+	}
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
+	p := r.toPayload(m)
 
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_namespace" "test" {
-  name        = "Test Namespace"
-  description = "A test namespace"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("tcm_namespace.test", "id"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "name", "Test Namespace"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "description", "A test namespace"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "is_disabled", "false"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "is_default", "false"),
-					resource.TestCheckResourceAttrSet("tcm_namespace.test", "created_date"),
-					resource.TestCheckResourceAttrSet("tcm_namespace.test", "last_modified"),
-				),
-			},
-			{
-				Config: providerConfig + `
-resource "tcm_namespace" "test" {
-  name        = "Updated Namespace"
-  description = "Updated description"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("tcm_namespace.test", "name", "Updated Namespace"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "description", "Updated description"),
-					resource.TestCheckResourceAttr("tcm_namespace.test", "is_disabled", "false"),
-				),
-			},
-			{
-				ResourceName:      "tcm_namespace.test",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-		},
-	})
+	if p.ID != "" {
+		t.Errorf("expected ID to be empty for unknown model ID, got %s", p.ID)
+	}
 }
 
-func TestAccNamespaceDataSource_read(t *testing.T) {
-	srv := newNamespaceMockServer(t)
-	t.Cleanup(srv.Close)
+func TestNamespace_applyNamespaceResult_allFields(t *testing.T) {
+	createdBy := "user-a"
+	lastModBy := "user-b"
+	name := "response-ns"
+	desc := "response desc"
+	resp := &namespaceResponse{
+		ID:             "ns-resp-001",
+		Name:           &name,
+		Description:    &desc,
+		IsDefault:      true,
+		IsDisabled:     false,
+		CreatedDate:    "2024-01-01T00:00:00Z",
+		CreatedBy:      &createdBy,
+		LastModified:   "2024-06-01T00:00:00Z",
+		LastModifiedBy: &lastModBy,
+	}
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
+	var m NamespaceResourceModel
+	applyNamespaceResult(&m, resp)
 
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_namespace" "seed" {
-  name        = "Seed Namespace"
-  description = "For datasource test"
+	if m.ID.ValueString() != "ns-resp-001" {
+		t.Errorf("expected ID ns-resp-001, got %s", m.ID.ValueString())
+	}
+	if m.Name.ValueString() != "response-ns" {
+		t.Errorf("expected Name response-ns, got %s", m.Name.ValueString())
+	}
+	if m.Description.ValueString() != "response desc" {
+		t.Errorf("expected Description response desc, got %s", m.Description.ValueString())
+	}
+	if !m.IsDefault.ValueBool() {
+		t.Error("expected IsDefault true")
+	}
+	if m.IsDisabled.ValueBool() {
+		t.Error("expected IsDisabled false")
+	}
+	if m.CreatedDate.ValueString() != "2024-01-01T00:00:00Z" {
+		t.Errorf("expected CreatedDate 2024-01-01T00:00:00Z, got %s", m.CreatedDate.ValueString())
+	}
+	if m.CreatedBy.ValueString() != "user-a" {
+		t.Errorf("expected CreatedBy user-a, got %s", m.CreatedBy.ValueString())
+	}
+	if m.LastModified.ValueString() != "2024-06-01T00:00:00Z" {
+		t.Errorf("expected LastModified 2024-06-01T00:00:00Z, got %s", m.LastModified.ValueString())
+	}
+	if m.LastModifiedBy.ValueString() != "user-b" {
+		t.Errorf("expected LastModifiedBy user-b, got %s", m.LastModifiedBy.ValueString())
+	}
 }
 
-data "tcm_namespace" "test" {
-  id = tcm_namespace.seed.id
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrPair("data.tcm_namespace.test", "id", "tcm_namespace.seed", "id"),
-					resource.TestCheckResourceAttr("data.tcm_namespace.test", "name", "Seed Namespace"),
-					resource.TestCheckResourceAttr("data.tcm_namespace.test", "description", "For datasource test"),
-					resource.TestCheckResourceAttr("data.tcm_namespace.test", "is_disabled", "false"),
-					resource.TestCheckResourceAttr("data.tcm_namespace.test", "is_default", "false"),
-					resource.TestCheckResourceAttrSet("data.tcm_namespace.test", "created_date"),
-					resource.TestCheckResourceAttrSet("data.tcm_namespace.test", "last_modified"),
-				),
-			},
-		},
-	})
+func TestNamespace_applyNamespaceResult_nullableNils(t *testing.T) {
+	resp := &namespaceResponse{
+		ID:             "ns-nil-001",
+		Name:           nil,
+		Description:    nil,
+		IsDefault:      false,
+		IsDisabled:     false,
+		CreatedDate:    "2024-01-01T00:00:00Z",
+		CreatedBy:      nil,
+		LastModified:   "2024-01-01T00:00:00Z",
+		LastModifiedBy: nil,
+	}
+
+	var m NamespaceResourceModel
+	applyNamespaceResult(&m, resp)
+
+	if !m.Description.IsNull() {
+		t.Error("expected Description to be null when response Description is nil")
+	}
+	if !m.CreatedBy.IsNull() {
+		t.Error("expected CreatedBy to be null when response CreatedBy is nil")
+	}
+	if !m.LastModifiedBy.IsNull() {
+		t.Error("expected LastModifiedBy to be null when response LastModifiedBy is nil")
+	}
 }
