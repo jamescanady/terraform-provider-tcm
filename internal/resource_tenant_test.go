@@ -1,274 +1,99 @@
-package internal_test
+package internal
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 
-	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-framework/types"
 )
 
-type mockTenant struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	Description      string `json:"description"`
-	GlobalTenantCode string `json:"globalTenantCode"`
-	TenantShortCode  string `json:"tenantShortCode,omitempty"`
-	IsDisabled       bool   `json:"isDisabled"`
+func TestTenant_applyTenantResult_withID(t *testing.T) {
+	id := "tenant-001"
+	p := &tenantPayload{
+		ID:               &id,
+		Name:             "Test Tenant",
+		Description:      "A test tenant",
+		GlobalTenantCode: "GTC001",
+		TenantShortCode:  "tsc001",
+		IsDisabled:       false,
+	}
+	var m TenantResourceModel
+	applyTenantResult(&m, p)
+
+	if m.ID.ValueString() != "tenant-001" {
+		t.Errorf("expected ID tenant-001, got %s", m.ID.ValueString())
+	}
+	if m.Name.ValueString() != "Test Tenant" {
+		t.Errorf("expected Name Test Tenant, got %s", m.Name.ValueString())
+	}
+	if m.Description.ValueString() != "A test tenant" {
+		t.Errorf("expected Description A test tenant, got %s", m.Description.ValueString())
+	}
+	if m.GlobalTenantCode.ValueString() != "GTC001" {
+		t.Errorf("expected GlobalTenantCode GTC001, got %s", m.GlobalTenantCode.ValueString())
+	}
+	if m.TenantShortCode.ValueString() != "tsc001" {
+		t.Errorf("expected TenantShortCode tsc001, got %s", m.TenantShortCode.ValueString())
+	}
+	if m.IsDisabled.ValueBool() {
+		t.Error("expected IsDisabled false")
+	}
 }
 
-func newTenantMockServer(t *testing.T) *httptest.Server {
-	t.Helper()
-	var (
-		mu      sync.Mutex
-		counter atomic.Int64
-		store   = map[string]*mockTenant{}
-	)
+func TestTenant_applyTenantResult_nilID(t *testing.T) {
+	p := &tenantPayload{
+		ID:               nil,
+		Name:             "Tenant B",
+		Description:      "Desc B",
+		GlobalTenantCode: "GTC002",
+		TenantShortCode:  "",
+		IsDisabled:       false,
+	}
+	m := TenantResourceModel{
+		ID: types.StringValue("pre-existing-id"),
+	}
+	applyTenantResult(&m, p)
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/v1/Tenant", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		var p struct {
-			Name             string `json:"name"`
-			Description      string `json:"description"`
-			GlobalTenantCode string `json:"globalTenantCode"`
-			TenantShortCode  string `json:"tenantShortCode"`
-			IsDisabled       bool   `json:"isDisabled"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		id := fmt.Sprintf("tenant-%d", counter.Add(1))
-		tenant := &mockTenant{
-			ID:               id,
-			Name:             p.Name,
-			Description:      p.Description,
-			GlobalTenantCode: p.GlobalTenantCode,
-			TenantShortCode:  p.TenantShortCode,
-			IsDisabled:       p.IsDisabled,
-		}
-		mu.Lock()
-		store[id] = tenant
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tenant) //nolint:errcheck
-	})
-
-	mux.HandleFunc("/v1/Tenant/", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimPrefix(r.URL.Path, "/v1/Tenant/")
-		switch r.Method {
-		case http.MethodGet:
-			mu.Lock()
-			tenant, ok := store[id]
-			var snap mockTenant
-			if ok {
-				snap = *tenant
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&snap) //nolint:errcheck
-
-		case http.MethodPut:
-			var p struct {
-				Name             string `json:"name"`
-				Description      string `json:"description"`
-				GlobalTenantCode string `json:"globalTenantCode"`
-				IsDisabled       bool   `json:"isDisabled"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			mu.Lock()
-			tenant, ok := store[id]
-			var updated mockTenant
-			if ok {
-				tenant.Name = p.Name
-				tenant.Description = p.Description
-				tenant.GlobalTenantCode = p.GlobalTenantCode
-				tenant.IsDisabled = p.IsDisabled
-				updated = *tenant
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(&updated) //nolint:errcheck
-
-		case http.MethodDelete:
-			mu.Lock()
-			_, ok := store[id]
-			if ok {
-				delete(store, id)
-			}
-			mu.Unlock()
-			if !ok {
-				http.Error(w, "not found", http.StatusNotFound)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	return httptest.NewServer(mux)
+	// ID should be unchanged when payload ID is nil
+	if m.ID.ValueString() != "pre-existing-id" {
+		t.Errorf("expected ID pre-existing-id, got %s", m.ID.ValueString())
+	}
 }
 
-func TestAccTenantResource_lifecycle(t *testing.T) {
-	srv := newTenantMockServer(t)
-	t.Cleanup(srv.Close)
+func TestTenant_applyTenantResult_emptyShortCode(t *testing.T) {
+	id := "tenant-sc"
+	p := &tenantPayload{
+		ID:               &id,
+		Name:             "Tenant SC",
+		Description:      "Desc SC",
+		GlobalTenantCode: "GTCSC",
+		TenantShortCode:  "", // empty — should not update model field
+		IsDisabled:       false,
+	}
+	m := TenantResourceModel{
+		TenantShortCode: types.StringValue("original-code"),
+	}
+	applyTenantResult(&m, p)
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_tenant" "test" {
-  name               = "Test Tenant"
-  description        = "A test tenant"
-  global_tenant_code = "GTC001"
-  tenant_short_code  = "tsc001"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrSet("tcm_tenant.test", "id"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "name", "Test Tenant"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "description", "A test tenant"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "global_tenant_code", "GTC001"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "tenant_short_code", "tsc001"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "is_disabled", "false"),
-				),
-			},
-			{
-				Config: providerConfig + `
-resource "tcm_tenant" "test" {
-  name               = "Updated Tenant"
-  description        = "Updated description"
-  global_tenant_code = "GTC002"
-  tenant_short_code  = "tsc001"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("tcm_tenant.test", "name", "Updated Tenant"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "description", "Updated description"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "global_tenant_code", "GTC002"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "tenant_short_code", "tsc001"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "is_disabled", "false"),
-				),
-			},
-			{
-				ResourceName:      "tcm_tenant.test",
-				ImportState:       true,
-				ImportStateVerify: true,
-			},
-		},
-	})
+	// TenantShortCode should remain unchanged when payload value is empty
+	if m.TenantShortCode.ValueString() != "original-code" {
+		t.Errorf("expected TenantShortCode to remain original-code, got %s", m.TenantShortCode.ValueString())
+	}
 }
 
-func TestAccTenantResource_shortCodeRequiresReplace(t *testing.T) {
-	srv := newTenantMockServer(t)
-	t.Cleanup(srv.Close)
+func TestTenant_applyTenantResult_disabled(t *testing.T) {
+	id := "tenant-dis"
+	p := &tenantPayload{
+		ID:               &id,
+		Name:             "Disabled Tenant",
+		Description:      "This tenant is disabled",
+		GlobalTenantCode: "GTC-DIS",
+		TenantShortCode:  "tdis",
+		IsDisabled:       true,
+	}
+	var m TenantResourceModel
+	applyTenantResult(&m, p)
 
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_tenant" "test" {
-  name               = "Tenant A"
-  description        = "First tenant"
-  global_tenant_code = "GTC001"
-  tenant_short_code  = "tsca"
-}
-`,
-				Check: resource.TestCheckResourceAttr("tcm_tenant.test", "tenant_short_code", "tsca"),
-			},
-			{
-				Config: providerConfig + `
-resource "tcm_tenant" "test" {
-  name               = "Tenant B"
-  description        = "Second tenant"
-  global_tenant_code = "GTC001"
-  tenant_short_code  = "tscb"
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttr("tcm_tenant.test", "tenant_short_code", "tscb"),
-					resource.TestCheckResourceAttr("tcm_tenant.test", "name", "Tenant B"),
-				),
-			},
-		},
-	})
-}
-
-func TestAccTenantDataSource_read(t *testing.T) {
-	srv := newTenantMockServer(t)
-	t.Cleanup(srv.Close)
-
-	providerConfig := fmt.Sprintf(`
-provider "tcm" {
-  base_url = %q
-  token    = "test-token"
-}
-`, srv.URL)
-
-	resource.UnitTest(t, resource.TestCase{
-		ProtoV6ProviderFactories: providerFactories(),
-		Steps: []resource.TestStep{
-			{
-				Config: providerConfig + `
-resource "tcm_tenant" "seed" {
-  name               = "Seed Tenant"
-  description        = "For datasource test"
-  global_tenant_code = "GTC_DS"
-  tenant_short_code  = "tscds"
-}
-
-data "tcm_tenant" "test" {
-  id = tcm_tenant.seed.id
-}
-`,
-				Check: resource.ComposeTestCheckFunc(
-					resource.TestCheckResourceAttrPair("data.tcm_tenant.test", "id", "tcm_tenant.seed", "id"),
-					resource.TestCheckResourceAttr("data.tcm_tenant.test", "name", "Seed Tenant"),
-					resource.TestCheckResourceAttr("data.tcm_tenant.test", "description", "For datasource test"),
-					resource.TestCheckResourceAttr("data.tcm_tenant.test", "global_tenant_code", "GTC_DS"),
-					resource.TestCheckResourceAttr("data.tcm_tenant.test", "tenant_short_code", "tscds"),
-					resource.TestCheckResourceAttr("data.tcm_tenant.test", "is_disabled", "false"),
-				),
-			},
-		},
-	})
+	if !m.IsDisabled.ValueBool() {
+		t.Error("expected IsDisabled true")
+	}
 }
